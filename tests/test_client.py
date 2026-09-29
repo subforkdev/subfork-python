@@ -185,3 +185,18 @@ def test_wait_timeout_does_not_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
         with pytest.raises(ExecutionTimeout):
             client.executions.wait("e_test", timeout=1)
     assert len(seen) == 1 and seen[0].method == "GET"
+
+
+def test_wait_reports_snapshots() -> None:
+    """Deliver both active and terminal snapshots to an optional progress callback."""
+    snapshots = []
+    statuses = iter(["running", "completed"])
+    with Subfork(
+        "synthetic-key",
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"status": next(statuses)})
+        ),
+    ) as client:
+        result = client.executions.wait("e_test", poll_interval=0.001, on_update=snapshots.append)
+    assert [snapshot["status"] for snapshot in snapshots] == ["running", "completed"]
+    assert result == snapshots[-1]

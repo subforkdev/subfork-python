@@ -4,11 +4,100 @@ import argparse
 import json
 import math
 import os
+import shutil
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Callable, Dict, Iterator, Optional, Sequence
 
 from . import AuthenticationError, ExecutionTimeout, Subfork, SubforkError, __version__
+
+
+@contextmanager
+def execution_status(graph_name: str) -> Iterator[Callable[[Dict[str, Any]], None]]:
+    """Animate the active nodes on terminal stderr while preserving JSON stdout."""
+    stream = sys.stderr
+    terminal = stream.isatty() and os.environ.get("TERM") != "dumb"
+    lock = threading.Lock()
+    label = "Graph " + graph_name
+    status = "Running"
+    titles: Dict[str, str] = {}
+    stopped = threading.Event()
+    frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    try:
+        frames.encode(stream.encoding or "ascii")
+    except UnicodeError:
+        frames = "|/-\\"
+
+    def update(snapshot: Dict[str, Any]) -> None:
+        """Replace the display state with active node titles from a snapshot."""
+        nonlocal label, status
+        definition = snapshot.get("definition") or {}
+        for node in definition.get("nodes", []):
+            titles[node["node_instance_id"]] = node.get("title") or node["node_instance_id"]
+        nodes = snapshot.get("node_executions") or {}
+        active = [
+            titles.get(key, key) for key, node in nodes.items() if node.get("status") == "running"
+        ]
+        with lock:
+            label = (
+                ("Node " if len(active) == 1 else "Nodes ") + ", ".join(active)
+                if active
+                else "Graph " + graph_name
+            )
+            status = (
+                "Running"
+                if active
+                else str(snapshot.get("status", "running")).replace("_", " ").title()
+            )
+
+    def render(index: int) -> None:
+        """Draw one width-limited line with a yellow spinner and green run status."""
+        with lock:
+            name = "".join(char if char.isprintable() else " " for char in label)
+            state = "".join(char if char.isprintable() else " " for char in status)
+        width = max(1, shutil.get_terminal_size().columns - 1)
+        name = name[: max(0, width - len(state) - 7)]
+        dots = "." * max(3, min(10, width - len(name) - len(state) - 4))
+        frame = frames[index % len(frames)]
+        plain = "{} {} {} {}".format(frame, name, dots, state)
+        if len(plain) > width:
+            line = plain[:width]
+        elif os.environ.get("NO_COLOR"):
+            line = plain
+        else:
+            colored_state = "\033[32m" + state + "\033[0m" if state == "Running" else state
+            line = "\033[33m{}\033[0m {} {} {}".format(frame, name, dots, colored_state)
+        stream.write("\r\033[2K" + line)
+        stream.flush()
+
+    def animate() -> None:
+        """Refresh the spinner independently of network requests and polling."""
+        index = 1
+        while not stopped.wait(0.1):
+            try:
+                render(index)
+            except (OSError, ValueError):
+                return
+            index += 1
+
+    if not terminal:
+        safe_name = "".join(char if char.isprintable() else " " for char in graph_name)
+        print("Graph {} .......... Running".format(safe_name), file=stream)
+        yield update
+        return
+    worker = threading.Thread(target=animate, name="subfork-spinner", daemon=True)
+    try:
+        render(0)
+        worker.start()
+        yield update
+    finally:
+        stopped.set()
+        if worker.ident is not None:
+            worker.join()
+        stream.write("\r\033[2K")
+        stream.flush()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -128,10 +217,20 @@ def graph_command(client: Subfork, args: argparse.Namespace) -> Any:
             raise ValueError(
                 "Submission returned no execution ID; inspect remote state before retrying."
             )
-        print("subfork: waiting for execution {}".format(execution_id), file=sys.stderr)
-        result = client.executions.wait(
-            execution_id, timeout=args.wait_timeout, poll_interval=args.poll_interval
+        snapshot_definition = result.get("definition")
+        graph_name = (
+            snapshot_definition.get("name") if isinstance(snapshot_definition, dict) else None
         )
+        with execution_status(
+            graph_name if isinstance(graph_name, str) else args.graph_id
+        ) as update:
+            update(result)
+            result = client.executions.wait(
+                execution_id,
+                timeout=args.wait_timeout,
+                poll_interval=args.poll_interval,
+                on_update=update,
+            )
     return result
 
 

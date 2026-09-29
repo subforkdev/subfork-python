@@ -58,6 +58,11 @@ Use `execute --no-wait` for a submission summary or `execute --raw` for the full
 execution snapshot. Waiting requires read and run scopes; submission alone requires
 run scope. `--wait-timeout` (default 120) and `--poll-interval` (default 2) are in
 seconds. A timeout stops waiting without canceling the remote run.
+A yellow spinner precedes `Graph <name> .......... Running`, with `Running` in
+green. As status snapshots arrive, the line shows the currently running node titles
+(or multiple titles for parallel nodes). Short-lived nodes may finish between polls.
+Set `NO_COLOR` to disable colors. Progress goes to stderr; stdout remains JSON.
+Redirected progress uses a single plain-text line.
 
 Other commands include `get`, `published`, and `versions`. Use `--help` on any
 command. Node discovery and execution monitoring are available through the Python API.

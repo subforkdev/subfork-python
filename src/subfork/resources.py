@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from urllib.parse import quote
 
 from .errors import ExecutionTimeout
@@ -173,7 +173,12 @@ class Executions(Resource):
         return self._client._request("POST", "/executions/" + segment(execution_id) + "/cancel")
 
     def wait(
-        self, execution_id: str, *, timeout: float = 120, poll_interval: float = 2
+        self,
+        execution_id: str,
+        *,
+        timeout: float = 120,
+        poll_interval: float = 2,
+        on_update: Optional[Callable[[Dict[str, Any]], None]] = None,
     ) -> Dict[str, Any]:
         """Poll until a terminal status or the polling deadline.
 
@@ -182,6 +187,8 @@ class Executions(Resource):
             timeout: Positive deadline in seconds. Remaining time caps HTTP
                 timeouts, which apply per I/O phase, not to the entire request.
             poll_interval: Positive delay in seconds between status requests.
+            on_update: Optional synchronous callback for each retrieved snapshot.
+                Callback exceptions propagate to the caller without canceling the run.
 
         Returns:
             The terminal snapshot, including failed or canceled executions.
@@ -208,6 +215,8 @@ class Executions(Resource):
                 "/executions/" + segment(execution_id),
                 timeout=min(self._client.timeout, remaining),
             )
+            if on_update is not None:
+                on_update(result)
             if result["status"] in {
                 "completed",
                 "failed",

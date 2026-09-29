@@ -181,3 +181,82 @@ def test_execution_output_modes(monkeypatch: pytest.MonkeyPatch, capsys: Any, mo
             "status": "failed" if mode == "failed" else "running",
         }
     assert len(seen) == (1 if mode == "no-wait" else 2)
+
+
+@pytest.mark.parametrize("interrupted", [False, True])
+@pytest.mark.parametrize("no_color", [False, True])
+def test_status_cleanup(monkeypatch: pytest.MonkeyPatch, interrupted: bool, no_color: bool) -> None:
+    """Show the graph name and restore terminal output on success or interruption."""
+
+    class Terminal(io.StringIO):
+        """Capture writes as an interactive terminal."""
+
+        def isatty(self) -> bool:
+            """Identify this stream as a terminal."""
+            return True
+
+    terminal = Terminal()
+    monkeypatch.setattr("sys.stderr", terminal)
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("NO_COLOR", "1" if no_color else "")
+    try:
+        with cli.execution_status("URL Extract Pipe"):
+            expected = "Running" if no_color else "\033[32mRunning\033[0m"
+            assert "Graph URL Extract Pipe .......... " + expected in terminal.getvalue()
+            if interrupted:
+                raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        assert interrupted
+    assert terminal.getvalue().endswith("\r\033[2K")
+
+
+def test_status_redirected_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep redirected progress plain and sanitize control characters in names."""
+    stream = io.StringIO()
+    monkeypatch.setattr("sys.stderr", stream)
+    with cli.execution_status("Greeting\nGraph"):
+        pass
+    assert stream.getvalue() == "Graph Greeting Graph .......... Running\n"
+
+
+def test_active_node_progress(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Animate named parallel nodes and clean up the rendering thread."""
+    import threading
+
+    refreshed = threading.Event()
+
+    class Terminal(io.StringIO):
+        """Capture animated frames and signal when node titles appear."""
+
+        def isatty(self) -> bool:
+            """Enable interactive progress rendering."""
+            return True
+
+        def write(self, value: str) -> int:
+            """Signal a node frame without timing-dependent sleeps."""
+            count = super().write(value)
+            if "Nodes Fetch, Parse" in value:
+                refreshed.set()
+            return count
+
+    terminal = Terminal()
+    monkeypatch.setattr("sys.stderr", terminal)
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    with cli.execution_status("Pipeline") as update:
+        update(
+            {
+                "status": "running",
+                "definition": {
+                    "nodes": [
+                        {"node_instance_id": "a", "title": "Fetch"},
+                        {"node_instance_id": "b", "title": "Parse"},
+                    ]
+                },
+                "node_executions": {"a": {"status": "running"}, "b": {"status": "running"}},
+            }
+        )
+        assert refreshed.wait(2)
+    assert "\033[33m" in terminal.getvalue()
+    assert "\033[32mRunning\033[0m" in terminal.getvalue()
+    assert not any(thread.name == "subfork-spinner" for thread in threading.enumerate())
