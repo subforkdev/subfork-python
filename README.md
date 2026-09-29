@@ -1,6 +1,6 @@
 <div class="gridline-home-hero">
   <a href="https://subfork.com">
-    <img src="assets/subfork-banner.png" alt="Subfork" width="100%">
+    <img src="https://raw.githubusercontent.com/subforkdev/subfork-python/master/assets/subfork-banner.png" alt="Subfork" width="100%">
   </a>
 </div>
 
