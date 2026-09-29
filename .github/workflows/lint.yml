@@ -1,6 +1,27 @@
 name: Lint and type check
 
-on: [push, pull_request]
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'pyproject.toml'
+      - 'Makefile'
+      - '.flake8'
+      - '.gitignore'
+      - '.github/workflows/lint.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'pyproject.toml'
+      - 'Makefile'
+      - '.flake8'
+      - '.gitignore'
+      - '.github/workflows/lint.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
