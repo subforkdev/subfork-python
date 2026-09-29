@@ -23,7 +23,14 @@ def execution_status(graph_name: str) -> Iterator[Callable[[Dict[str, Any]], Non
     label = "Graph " + graph_name
     status = "Running"
     titles: Dict[str, str] = {}
+    reported: Dict[str, str] = {}
+    name_width = len(label)
     stopped = threading.Event()
+    completed_marker = "✓"
+    try:
+        completed_marker.encode(stream.encoding or "ascii")
+    except UnicodeError:
+        completed_marker = "+"
     frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     try:
         frames.encode(stream.encoding or "ascii")
@@ -32,7 +39,7 @@ def execution_status(graph_name: str) -> Iterator[Callable[[Dict[str, Any]], Non
 
     def update(snapshot: Dict[str, Any]) -> None:
         """Replace the display state with active node titles from a snapshot."""
-        nonlocal label, status
+        nonlocal label, status, name_width
         definition = snapshot.get("definition") or {}
         for node in definition.get("nodes", []):
             titles[node["node_instance_id"]] = node.get("title") or node["node_instance_id"]
@@ -41,6 +48,43 @@ def execution_status(graph_name: str) -> Iterator[Callable[[Dict[str, Any]], Non
             titles.get(key, key) for key, node in nodes.items() if node.get("status") == "running"
         ]
         with lock:
+            name_width = max(
+                [name_width]
+                + [len("Node " + title) for title in titles.values()]
+                + [len("Node " + key) for key in nodes if key not in titles]
+            )
+            for key, node in nodes.items():
+                outcome = node.get("status")
+                if outcome not in {
+                    "completed",
+                    "failed",
+                    "canceled",
+                    "cancelled",
+                    "skipped",
+                    "outcome_unknown",
+                }:
+                    continue
+                if reported.get(key) == outcome:
+                    continue
+                reported[key] = outcome
+                state = "Canceled" if outcome == "cancelled" else outcome.replace("_", " ").title()
+                name = "Node " + titles.get(key, key)
+                if terminal:
+                    stream.write(
+                        "\r\033[2K"
+                        + format_line(
+                            completed_marker if outcome == "completed" else "-", name, state
+                        )
+                        + "\n"
+                    )
+                else:
+                    stream.write(
+                        format_line(
+                            completed_marker if outcome == "completed" else "-", name, state
+                        )
+                        + "\n"
+                    )
+                stream.flush()
             label = (
                 ("Node " if len(active) == 1 else "Nodes ") + ", ".join(active)
                 if active
@@ -52,25 +96,30 @@ def execution_status(graph_name: str) -> Iterator[Callable[[Dict[str, Any]], Non
                 else str(snapshot.get("status", "running")).replace("_", " ").title()
             )
 
-    def render(index: int) -> None:
-        """Draw one width-limited line with a yellow spinner and green run status."""
-        with lock:
-            name = "".join(char if char.isprintable() else " " for char in label)
-            state = "".join(char if char.isprintable() else " " for char in status)
+    def format_line(frame: str, name: str, state: str) -> str:
+        """Format a width-limited progress row without splitting color escapes."""
+        name = "".join(char if char.isprintable() else " " for char in name)
+        state = "".join(char if char.isprintable() else " " for char in state)
         width = max(1, shutil.get_terminal_size().columns - 1)
-        name = name[: max(0, width - len(state) - 7)]
-        dots = "." * max(3, min(10, width - len(name) - len(state) - 4))
-        frame = frames[index % len(frames)]
+        # Reserve space for the longest status so different outcomes align too.
+        status_column = min(name_width + 14, max(7, width - len("Outcome Unknown")))
+        name = name[: max(0, status_column - 7)]
+        dots = "." * max(3, status_column - len(name) - 4)
         plain = "{} {} {} {}".format(frame, name, dots, state)
         if len(plain) > width:
-            line = plain[:width]
-        elif os.environ.get("NO_COLOR"):
-            line = plain
-        else:
-            colored_state = "\033[32m" + state + "\033[0m" if state == "Running" else state
-            line = "\033[33m{}\033[0m {} {} {}".format(frame, name, dots, colored_state)
-        stream.write("\r\033[2K" + line)
-        stream.flush()
+            return plain[:width]
+        if not terminal or os.environ.get("NO_COLOR"):
+            return plain
+        color = "32" if state in {"Running", "Completed"} else "31" if state == "Failed" else "33"
+        colored_state = "\033[" + color + "m" + state + "\033[0m"
+        marker_color = "32" if state == "Completed" else "33"
+        return "\033[{}m{}\033[0m {} {} {}".format(marker_color, frame, name, dots, colored_state)
+
+    def render(index: int) -> None:
+        """Draw the active row without interleaving retained completion lines."""
+        with lock:
+            stream.write("\r\033[2K" + format_line(frames[index % len(frames)], label, status))
+            stream.flush()
 
     def animate() -> None:
         """Refresh the spinner independently of network requests and polling."""
@@ -122,6 +171,9 @@ def build_parser() -> argparse.ArgumentParser:
             child.add_argument("--comment", default="")
         elif command == "execute":
             child.add_argument("--version", default="draft")
+            child.add_argument(
+                "-o", "--out", help="Write result JSON to a new file instead of stdout"
+            )
             child.add_argument(
                 "--no-wait", action="store_true", help="Return submission status immediately"
             )
@@ -205,13 +257,14 @@ def graph_command(client: Subfork, args: argparse.Namespace) -> Any:
     ):
         raise ValueError("Wait timeout and poll interval must be positive finite numbers.")
     result = graphs.execute(args.graph_id, version=args.version, inputs=inputs)
-    if not args.no_wait and result.get("status") not in {
+    terminal_statuses = {
         "completed",
         "failed",
         "canceled",
         "cancelled",
         "outcome_unknown",
-    }:
+    }
+    if not args.no_wait:
         execution_id = result.get("id") or result.get("execution_id")
         if not isinstance(execution_id, str) or not execution_id:
             raise ValueError(
@@ -225,12 +278,13 @@ def graph_command(client: Subfork, args: argparse.Namespace) -> Any:
             graph_name if isinstance(graph_name, str) else args.graph_id
         ) as update:
             update(result)
-            result = client.executions.wait(
-                execution_id,
-                timeout=args.wait_timeout,
-                poll_interval=args.poll_interval,
-                on_update=update,
-            )
+            if result.get("status") not in terminal_statuses:
+                result = client.executions.wait(
+                    execution_id,
+                    timeout=args.wait_timeout,
+                    poll_interval=args.poll_interval,
+                    on_update=update,
+                )
     return result
 
 
@@ -242,6 +296,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     """
     args = build_parser().parse_args(argv)
     try:
+        result_file = getattr(args, "out", None)
+        if result_file is not None and Path(result_file).exists():
+            raise ValueError("Output file already exists; choose a new path.")
         with Subfork(base_url=args.base_url, timeout=args.timeout) as client:
             result = graph_command(client, args)
         failed = args.command == "execute" and result.get("status") in {
@@ -261,11 +318,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 display = result.get("outputs", {})
         rendered = json.dumps(display, indent=2, ensure_ascii=False) + "\n"
         output = getattr(args, "output", "-")
-        if output == "-":
+        if result_file is None and output == "-":
             sys.stdout.write(rendered)
         else:
-            # Exclusive creation avoids silently overwriting a local definition.
-            with Path(output).open("x", encoding="utf-8", newline="\n") as stream:
+            # Exclusive creation avoids silently overwriting an existing file.
+            with Path(result_file if result_file is not None else output).open(
+                "x", encoding="utf-8", newline="\n"
+            ) as stream:
                 stream.write(rendered)
         if failed:
             print(

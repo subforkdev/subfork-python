@@ -2,6 +2,7 @@
 
 import io
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -260,3 +261,91 @@ def test_active_node_progress(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "\033[33m" in terminal.getvalue()
     assert "\033[32mRunning\033[0m" in terminal.getvalue()
     assert not any(thread.name == "subfork-spinner" for thread in threading.enumerate())
+
+
+@pytest.mark.parametrize("terminal", [False, True])
+def test_retained_node_outcomes(
+    monkeypatch: pytest.MonkeyPatch, capsys: Any, terminal: bool
+) -> None:
+    """Retain each terminal node once, including nodes that finish between polls."""
+
+    class ProgressStream(io.StringIO):
+        """Capture either terminal or redirected progress."""
+
+        def isatty(self) -> bool:
+            """Select the requested output mode."""
+            return terminal
+
+    stream = ProgressStream()
+    monkeypatch.setattr("sys.stderr", stream)
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("NO_COLOR", "1")
+    snapshot = {
+        "status": "failed",
+        "definition": {
+            "nodes": [
+                {"node_instance_id": "a", "title": "Fetch"},
+                {"node_instance_id": "b", "title": "Parse"},
+                {"node_instance_id": "c", "title": "Save"},
+            ]
+        },
+        "node_executions": {
+            "a": {"status": "completed"},
+            "b": {"status": "failed"},
+            "c": {"status": "canceled"},
+        },
+    }
+    with cli.execution_status("Pipeline") as update:
+        update(snapshot)
+        update(snapshot)
+    output = stream.getvalue()
+    for name, outcome in (("Fetch", "Completed"), ("Parse", "Failed"), ("Save", "Canceled")):
+        assert len(re.findall(r"Node " + name + r" \.+ " + outcome + r"\n", output)) == 1
+    assert capsys.readouterr().out == ""
+
+
+def test_node_status_columns_align(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pad different node names so terminal outcomes start in the same column."""
+    stream = io.StringIO()
+    monkeypatch.setattr("sys.stderr", stream)
+    with cli.execution_status("Demo") as update:
+        update(
+            {
+                "node_executions": {
+                    "A": {"status": "completed"},
+                    "Longer node name": {"status": "failed"},
+                    "Mid": {"status": "canceled"},
+                }
+            }
+        )
+    lines = stream.getvalue().splitlines()[1:]
+    columns = [line.index(state) for line, state in zip(lines, ["Completed", "Failed", "Canceled"])]
+    assert len(columns) == 3
+    assert len(set(columns)) == 1
+
+
+@pytest.mark.parametrize("flag", ["-o", "--out"])
+@pytest.mark.parametrize("mode", [None, "--raw", "--no-wait"])
+def test_execute_result_file(
+    requests: list, tmp_path: Path, capsys: Any, flag: str, mode: Any
+) -> None:
+    """Route results exclusively to a file and reject overwrites before submission."""
+    output = tmp_path / "result.json"
+    arguments = ["execute", "g_test", flag, str(output)]
+    if mode:
+        arguments.append(mode)
+    assert cli.main(arguments) == 0
+    value = json.loads(output.read_text())
+    assert value == (
+        {"id": "test", "status": "completed"}
+        if mode == "--raw"
+        else {"execution_id": "test", "status": "completed"} if mode == "--no-wait" else {}
+    )
+    assert capsys.readouterr().out == ""
+    count = len(requests)
+    assert cli.main(arguments) == 1
+    assert len(requests) == count
+    assert json.loads(output.read_text()) == value
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "already exists" in captured.err
