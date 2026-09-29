@@ -11,7 +11,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterator, Optional, Sequence
 
-from . import AuthenticationError, ExecutionTimeout, Subfork, SubforkError, __version__
+from . import APIError, AuthenticationError, ExecutionTimeout, Subfork, SubforkError, __version__
+
+
+def print_api_error(status_code: int, message: str) -> None:
+    """Write a concise API diagnostic, coloring only the status code on terminals."""
+    code = str(status_code)
+    if sys.stderr.isatty() and os.environ.get("TERM") != "dumb" and not os.environ.get("NO_COLOR"):
+        code = "\033[33m" + code + "\033[0m"
+    print("{}: {}".format(code, message), file=sys.stderr)
 
 
 @contextmanager
@@ -161,6 +169,10 @@ def build_parser() -> argparse.ArgumentParser:
     for command in ("get", "versions", "interface", "export", "publish", "execute"):
         child = commands.add_parser(command)
         child.add_argument("graph_id")
+        if command in {"export", "execute"}:
+            child.add_argument(
+                "-f", "--force", action="store_true", help="Overwrite an existing output file"
+            )
         if command == "export":
             child.add_argument(
                 "--output", default="-", help="Definition JSON path, or - for stdout"
@@ -171,9 +183,7 @@ def build_parser() -> argparse.ArgumentParser:
             child.add_argument("--comment", default="")
         elif command == "execute":
             child.add_argument("--version", default="draft")
-            child.add_argument(
-                "-o", "--out", help="Write result JSON to a new file instead of stdout"
-            )
+            child.add_argument("-o", "--out", help="Write result JSON to a file instead of stdout")
             child.add_argument(
                 "--no-wait", action="store_true", help="Return submission status immediately"
             )
@@ -297,8 +307,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         result_file = getattr(args, "out", None)
-        if result_file is not None and Path(result_file).exists():
-            raise ValueError("Output file already exists; choose a new path.")
+        force = getattr(args, "force", False)
+        export_file = getattr(args, "output", "-")
+        destination = (
+            result_file
+            if result_file is not None
+            else (export_file if export_file != "-" else None)
+        )
+        if destination is not None and Path(destination).exists() and not force:
+            raise ValueError("Output file already exists; use --force to overwrite.")
         with Subfork(base_url=args.base_url, timeout=args.timeout) as client:
             result = graph_command(client, args)
         failed = args.command == "execute" and result.get("status") in {
@@ -321,9 +338,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if result_file is None and output == "-":
             sys.stdout.write(rendered)
         else:
-            # Exclusive creation avoids silently overwriting an existing file.
+            # Open only after the request and serialization succeed.
             with Path(result_file if result_file is not None else output).open(
-                "x", encoding="utf-8", newline="\n"
+                "w" if force else "x", encoding="utf-8", newline="\n"
             ) as stream:
                 stream.write(rendered)
         if failed:
@@ -344,13 +361,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 1
     except AuthenticationError:
-        print(
-            "subfork: authentication failed (HTTP 401). Check that SUBFORK_API_KEY "
+        print_api_error(
+            401,
+            "Authentication failed. Check that SUBFORK_API_KEY "
             "is an active key issued by the service selected with --base-url or "
             "SUBFORK_BASE_URL (default: https://subfork.com). "
             "The CLI reads exported environment variables; it does not load .env files.",
-            file=sys.stderr,
         )
+        return 1
+    except APIError as exc:
+        message = str(exc)
+        prefix = "Subfork API returned HTTP {}.".format(exc.status_code)
+        if message.startswith(prefix):
+            message = message[len(prefix) :].strip() or "API request failed."
+        print_api_error(exc.status_code, message)
         return 1
     except (SubforkError, ValueError, OSError) as exc:
         print("subfork: {}".format(exc), file=sys.stderr)

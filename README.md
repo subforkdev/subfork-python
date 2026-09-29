@@ -35,44 +35,22 @@ The client reads `SUBFORK_API_KEY` and connects to [subfork.com](https://subfork
 
 ## Command line
 
-The package also installs `subfork` (or use `python -m subfork`). It reads
-`SUBFORK_API_KEY` from your environment and prints JSON for use in scripts.
+The package includes a `subfork` CLI that uses your `SUBFORK_API_KEY`.
 
 ```bash
 subfork list
 subfork export GRAPH_ID --output graph.json
 subfork validate graph.json
 subfork create graph.json --name "My new graph"
-subfork interface GRAPH_ID
 subfork publish GRAPH_ID --version v1
-subfork execute GRAPH_ID --version v1 --inputs inputs.json
+subfork execute GRAPH_ID --version v1
 subfork execute GRAPH_ID -o results.json
 ```
 
-Export writes a graph's draft definition, which can be passed directly to create.
-It refuses to overwrite an existing file; omit `--output` to print to stdout.
-Descriptions, tags, and published versions are not included in the export.
-JSON input files must contain an object; use `-` to read from stdin.
-Create makes a public draft, publish creates an immutable version, and execute
-waits for completion and prints the graph outputs. Runs consume account quota.
-Use `-o results.json` or `--out results.json` to write result JSON to a new file
-instead of stdout. Progress still goes to stderr. Existing files are not overwritten.
-Use `execute --no-wait` for a submission summary or `execute --raw` for the full
-execution snapshot. Waiting requires read and run scopes; submission alone requires
-run scope. `--wait-timeout` (default 120) and `--poll-interval` (default 2) are in
-seconds. A timeout stops waiting without canceling the remote run.
-A yellow spinner precedes `Graph <name> .......... Running`, with `Running` in
-green. As status snapshots arrive, the line shows the currently running node titles
-(or multiple titles for parallel nodes). Short-lived nodes may finish between polls.
-Set `NO_COLOR` to disable colors. Progress goes to stderr; stdout remains JSON.
-Finished nodes remain on separate stderr lines with their final status before
-the JSON results appear. Redirected progress uses plain text without animation.
-
-Other commands include `get`, `published`, and `versions`. Use `--help` on any
-command. Node discovery and execution monitoring are available through the Python API.
-
-Errors go to stderr. Operational errors and failed validation return exit code 1;
-usage errors return 2. Failed executions and wait timeouts also return exit code 1.
+`execute` waits for completion and returns JSON. Use `-o` to save results to a
+file; progress stays on stderr. Add `-f` / `--force` to overwrite existing output
+files with `execute` or `export`. Run `subfork --help` or `subfork execute --help`
+for more options.
 
 ## Create and run a graph
 

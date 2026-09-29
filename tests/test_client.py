@@ -1,7 +1,7 @@
 """Exercise client contracts without network access or real credentials."""
 
 import json
-from typing import Type
+from typing import Any, Type
 
 import httpx
 import pytest
@@ -68,6 +68,7 @@ def test_credentials_required(monkeypatch: pytest.MonkeyPatch) -> None:
     [
         (401, AuthenticationError),
         (403, PermissionDeniedError),
+        (409, APIError),
         (422, ValidationError),
         (429, RateLimitError),
         (503, APIError),
@@ -200,3 +201,31 @@ def test_wait_reports_snapshots() -> None:
         result = client.executions.wait("e_test", poll_interval=0.001, on_update=snapshots.append)
     assert [snapshot["status"] for snapshot in snapshots] == ["running", "completed"]
     assert result == snapshots[-1]
+
+
+@pytest.mark.parametrize(
+    "detail,recognized",
+    [
+        (
+            "Graph secret '"
+            + KEY
+            + "' could not be decrypted. The server encryption key may have changed; re-enter this secret in Graph Settings.",
+            True,
+        ),
+        (KEY, False),
+        ({"secret": KEY}, False),
+        (None, False),
+    ],
+)
+def test_decryption_error_guidance(detail: Any, recognized: bool) -> None:
+    """Explain known conflicts without echoing even the server-provided secret name."""
+    with Subfork(
+        KEY,
+        transport=httpx.MockTransport(lambda request: httpx.Response(409, json={"detail": detail})),
+    ) as client:
+        with pytest.raises(APIError) as caught:
+            client.graphs.execute("g_test")
+    message = str(caught.value)
+    assert caught.value.status_code == 409
+    assert KEY not in message
+    assert ("Graph Settings > Secrets" in message) is recognized

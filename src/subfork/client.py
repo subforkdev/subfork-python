@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from types import TracebackType
 from typing import Any, Optional, Type
 
@@ -20,6 +21,29 @@ from .errors import (
     ValidationError,
 )
 from .resources import Executions, Graphs, Nodes
+
+
+def _error_message(response: httpx.Response) -> str:
+    """Translate recognized server errors into fixed, credential-safe guidance."""
+    message = "Subfork API returned HTTP %s." % response.status_code
+    if response.status_code != 409:
+        return message
+    try:
+        payload = response.json()
+    except ValueError:
+        return message
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if isinstance(detail, str) and re.fullmatch(
+        r"Graph secret '[^\r\n]*' could not be decrypted\. The server encryption "
+        r"key may have changed; re-enter this secret in Graph Settings\.",
+        detail,
+    ):
+        return (
+            message + " A stored graph secret could not be decrypted. "
+            "The server encryption key may have changed. "
+            "Re-enter and save the affected secret in Graph Settings > Secrets, then retry."
+        )
+    return message
 
 
 class Subfork:
@@ -110,7 +134,7 @@ class Subfork:
             }
             # Fixed messages avoid reflecting secrets from an untrusted response.
             raise errors.get(response.status_code, APIError)(
-                "Subfork API returned HTTP %s." % response.status_code,
+                _error_message(response),
                 status_code=response.status_code,
                 retry_after=response.headers.get("retry-after"),
             )

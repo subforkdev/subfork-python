@@ -349,3 +349,72 @@ def test_execute_result_file(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "already exists" in captured.err
+
+
+@pytest.mark.parametrize(
+    "terminal,no_color,colored", [(True, False, True), (True, True, False), (False, False, False)]
+)
+def test_api_error_display(
+    monkeypatch: pytest.MonkeyPatch, terminal: bool, no_color: bool, colored: bool
+) -> None:
+    """Color only the error code and omit redundant API and program prefixes."""
+
+    class ErrorStream(io.StringIO):
+        """Capture diagnostics with configurable terminal detection."""
+
+        def isatty(self) -> bool:
+            """Return the selected terminal mode."""
+            return terminal
+
+    def factory(**kwargs: Any) -> Subfork:
+        """Raise the SDK's safe conflict explanation."""
+        from subfork import APIError
+
+        raise APIError(
+            "Subfork API returned HTTP 409. A stored graph secret could not be decrypted.",
+            status_code=409,
+        )
+
+    stream = ErrorStream()
+    monkeypatch.setattr("sys.stderr", stream)
+    monkeypatch.setattr(cli, "Subfork", factory)
+    monkeypatch.setenv("TERM", "xterm")
+    monkeypatch.setenv("NO_COLOR", "1" if no_color else "")
+    assert cli.main(["list"]) == 1
+    code = "\033[33m409\033[0m" if colored else "409"
+    assert stream.getvalue() == code + ": A stored graph secret could not be decrypted.\n"
+
+
+@pytest.mark.parametrize("flag", ["-f", "--force"])
+@pytest.mark.parametrize("command,option", [("execute", "-o"), ("export", "--output")])
+def test_force_output(
+    requests: list, tmp_path: Path, capsys: Any, flag: str, command: str, option: str
+) -> None:
+    """Replace the whole output file only when explicitly requested."""
+    output = tmp_path / "existing.json"
+    output.write_text("previous result with extra trailing content")
+    assert cli.main([command, "g_test", option, str(output), flag]) == 0
+    assert json.loads(output.read_text()) == (
+        {} if command == "execute" else {"name": "Greeting", "nodes": [], "edges": []}
+    )
+    assert capsys.readouterr().out == ""
+
+
+def test_force_preserves_output_on_api_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keep the previous result if execution submission fails."""
+
+    def factory(**kwargs: Any) -> Subfork:
+        """Construct a client that receives a server conflict."""
+        return Subfork(
+            "synthetic-key",
+            transport=httpx.MockTransport(lambda request: httpx.Response(409)),
+            **kwargs,
+        )
+
+    monkeypatch.setattr(cli, "Subfork", factory)
+    output = tmp_path / "existing.json"
+    output.write_text("previous result")
+    assert cli.main(["execute", "g_test", "-o", str(output), "--force"]) == 1
+    assert output.read_text() == "previous result"
