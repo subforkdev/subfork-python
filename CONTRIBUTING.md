@@ -1,6 +1,7 @@
 # Contributing
 
-Install the development dependencies using Python 3.8+ and a modern pip:
+To contribute to this Python client, install its development dependencies using
+Python 3.8+ and a modern pip:
 
 ```bash
 python -m pip install --upgrade pip
@@ -9,11 +10,9 @@ python -m pip install -e '.[dev]'
 
 ## Code quality
 
-
 Install `.[dev]` to get the pinned development tools. Black 24.8.0, isort 5.13.2,
-and Flake8 7.1.1 follow the conventions used in the sibling envstack and pyseq
-projects: 100-column formatting, isort's Black profile, and a Python 3.8 target.
-The tool versions also support running locally under Python 3.8.
+and Flake8 7.1.1 use 100-column formatting, isort's Black profile, and a Python
+3.8 target.
 
 ```bash
 make format       # Sort imports and apply Black to src/ and tests/

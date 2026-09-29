@@ -37,11 +37,12 @@ class Subfork:
         timeout: float = 30,
         transport: Optional[httpx.BaseTransport] = None,
     ) -> None:
-        """Create a client for an HTTPS origin or a local development server.
+        """Create an authenticated client for the Subfork API.
 
         Args:
             api_key: Bearer secret, or None to read SUBFORK_API_KEY.
-            base_url: Origin without an API path, query, or credentials.
+            base_url: API origin, defaulting to https://subfork.com, without
+                an API path, query, or credentials.
             timeout: Positive per-I/O-phase HTTP timeout in seconds.
             transport: Optional HTTPX transport, primarily for testing.
 

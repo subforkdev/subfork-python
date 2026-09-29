@@ -2,7 +2,6 @@
   <a href="https://subfork.com">
     <img src="assets/subfork-banner.png" alt="Subfork" width="100%">
   </a>
-  <p>Create, publish, and run graphs from Python.</p>
 </div>
 
 # Subfork Python
@@ -32,15 +31,39 @@ with Subfork() as client:
     graphs = client.graphs.list()
 ```
 
-The client reads `SUBFORK_API_KEY` and connects to `https://subfork.com` by default.
-Responses are dictionaries and lists matching the API's JSON responses.
+The client reads `SUBFORK_API_KEY` and connects to [subfork.com](https://subfork.com).
 
-For another deployment, pass its origin without `/api/v1`:
+## Command line
 
-```python
-with Subfork(base_url="http://subfork.localhost") as client:
-    nodes = client.nodes.list()
+The package also installs `subfork` (or use `python -m subfork`). It reads
+`SUBFORK_API_KEY` from your environment and prints JSON for use in scripts.
+
+```bash
+subfork list
+subfork export GRAPH_ID --output graph.json
+subfork validate graph.json
+subfork create graph.json --name "My new graph"
+subfork interface GRAPH_ID
+subfork publish GRAPH_ID --version v1
+subfork execute GRAPH_ID --version v1 --inputs inputs.json
 ```
+
+Export writes a graph's draft definition, which can be passed directly to create.
+It refuses to overwrite an existing file; omit `--output` to print to stdout.
+Descriptions, tags, and published versions are not included in the export.
+JSON input files must contain an object; use `-` to read from stdin.
+Create makes a public draft, publish creates an immutable version, and execute
+waits for completion and prints the graph outputs. Runs consume account quota.
+Use `execute --no-wait` for a submission summary or `execute --raw` for the full
+execution snapshot. Waiting requires read and run scopes; submission alone requires
+run scope. `--wait-timeout` (default 120) and `--poll-interval` (default 2) are in
+seconds. A timeout stops waiting without canceling the remote run.
+
+Other commands include `get`, `published`, and `versions`. Use `--help` on any
+command. Node discovery and execution monitoring are available through the Python API.
+
+Errors go to stderr. Operational errors and failed validation return exit code 1;
+usage errors return 2. Failed executions and wait timeouts also return exit code 1.
 
 ## Create and run a graph
 
