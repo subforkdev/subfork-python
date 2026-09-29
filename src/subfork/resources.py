@@ -1,4 +1,5 @@
 """Small resource wrappers over the existing versioned HTTP API."""
+
 from __future__ import annotations
 
 import math
@@ -13,83 +14,206 @@ if TYPE_CHECKING:
 
 
 def segment(value: str) -> str:
-    if not value or value in {'.', '..'}:
-        raise ValueError('Resource identifiers must be non-empty and cannot be dot segments.')
-    return quote(value, safe='')
+    """Encode an identifier as a path segment, rejecting empty or dot segments."""
+    if not value or value in {".", ".."}:
+        raise ValueError("Resource identifiers must be non-empty and cannot be dot segments.")
+    return quote(value, safe="")
 
 
 class Resource:
-    def __init__(self, client: Subfork):
+    """Share a client connection with a resource-specific wrapper."""
+
+    def __init__(self, client: Subfork) -> None:
+        """Bind this wrapper to its owning client."""
         self._client = client
 
 
 class Nodes(Resource):
+    """Discover available node implementations and manifests."""
+
     def list(self, *, include_all_versions: bool = False) -> List[Dict[str, Any]]:
-        return self._client._request('GET', '/nodes', params={'include_all_versions': include_all_versions})
+        """Return node manifests, optionally including older published versions."""
+        return self._client._request(
+            "GET", "/nodes", params={"include_all_versions": include_all_versions}
+        )
 
     def get(self, node_id: str) -> Dict[str, Any]:
-        return self._client._request('GET', '/nodes/' + segment(node_id))
+        """Return the current public manifest for a node ID."""
+        return self._client._request("GET", "/nodes/" + segment(node_id))
 
 
 class Graphs(Resource):
+    """Author drafts and discover or publish reusable graph versions."""
+
     def list(self) -> List[Dict[str, Any]]:
-        return self._client._request('GET', '/graphs')
+        """Return the account graph listing."""
+        return self._client._request("GET", "/graphs")
 
     def get(self, graph_id: str) -> Dict[str, Any]:
-        return self._client._request('GET', '/graphs/' + segment(graph_id))
+        """Return an accessible graph by ID."""
+        return self._client._request("GET", "/graphs/" + segment(graph_id))
 
     def validate(self, definition: Dict[str, Any], *, name: Optional[str] = None) -> Dict[str, Any]:
-        return self._client._request('POST', '/graphs/validate', json={
-            'name': name if name is not None else definition.get('name', 'Untitled Graph'), 'definition': definition})
+        """Validate a candidate without saving it or executing nodes.
 
-    def create(self, *, name: str, definition: Dict[str, Any], description: str = '', tags: Optional[List[str]] = None) -> Dict[str, Any]:
-        return self._client._request('POST', '/graphs', json={
-            'name': name, 'description': description, 'definition': definition, 'tags': tags or []})
+        An omitted name defaults to the definition name or Untitled Graph.
+        Validation does not guarantee that runtime execution will succeed.
+        """
+        return self._client._request(
+            "POST",
+            "/graphs/validate",
+            json={
+                "name": name if name is not None else definition.get("name", "Untitled Graph"),
+                "definition": definition,
+            },
+        )
 
-    def update(self, graph_id: str, *, name: str, definition: Dict[str, Any], description: str = '') -> Dict[str, Any]:
-        return self._client._request('PUT', '/graphs/' + segment(graph_id), json={
-            'name': name, 'description': description, 'definition': definition})
+    def create(
+        self,
+        *,
+        name: str,
+        definition: Dict[str, Any],
+        description: str = "",
+        tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Create a public draft and return its server representation.
+
+        Requires graphs:write. Inspect remote state before retrying a request
+        with an uncertain outcome to avoid creating duplicate graphs.
+        """
+        return self._client._request(
+            "POST",
+            "/graphs",
+            json={
+                "name": name,
+                "description": description,
+                "definition": definition,
+                "tags": tags or [],
+            },
+        )
+
+    def update(
+        self, graph_id: str, *, name: str, definition: Dict[str, Any], description: str = ""
+    ) -> Dict[str, Any]:
+        """Replace the submitted draft fields of an owned graph.
+
+        Requires graphs:write. Pass description to preserve its value; the
+        default empty string clears it.
+        """
+        return self._client._request(
+            "PUT",
+            "/graphs/" + segment(graph_id),
+            json={"name": name, "description": description, "definition": definition},
+        )
 
     def published(self) -> List[Dict[str, Any]]:
-        return self._client._request('GET', '/graphs/published')
+        """Return the published reusable graph catalog."""
+        return self._client._request("GET", "/graphs/published")
 
     def versions(self, graph_id: str) -> List[Dict[str, Any]]:
-        return self._client._request('GET', '/graphs/' + segment(graph_id) + '/versions')
+        """Return stored versions of an owned graph."""
+        return self._client._request("GET", "/graphs/" + segment(graph_id) + "/versions")
 
     def published_version(self, graph_id: str, version: str) -> Dict[str, Any]:
-        return self._client._request('GET', '/graphs/published/' + segment(graph_id) + '/versions/' + segment(version))
+        """Return a published definition, interface, and composite node manifest."""
+        return self._client._request(
+            "GET", "/graphs/published/" + segment(graph_id) + "/versions/" + segment(version)
+        )
 
     def interface(self, graph_id: str) -> Dict[str, Any]:
-        return self._client._request('GET', '/graphs/' + segment(graph_id) + '/interface-preview')
+        """Preview the server-inferred interface of an owned graph draft."""
+        return self._client._request("GET", "/graphs/" + segment(graph_id) + "/interface-preview")
 
-    def publish(self, graph_id: str, *, version: str, interface: Optional[Dict[str, Any]] = None, comment: str = '') -> Dict[str, Any]:
-        payload: Dict[str, Any] = {'version': version, 'comment': comment}
+    def publish(
+        self,
+        graph_id: str,
+        *,
+        version: str,
+        interface: Optional[Dict[str, Any]] = None,
+        comment: str = "",
+    ) -> Dict[str, Any]:
+        """Publish an immutable version of an owned graph.
+
+        Requires graphs:publish. The server infers the interface if omitted.
+        This creates public content and is not automatically retried.
+        """
+        payload: Dict[str, Any] = {"version": version, "comment": comment}
         if interface is not None:
-            payload['interface'] = interface
-        return self._client._request('POST', '/graphs/' + segment(graph_id) + '/versions', json=payload)
+            payload["interface"] = interface
+        return self._client._request(
+            "POST", "/graphs/" + segment(graph_id) + "/versions", json=payload
+        )
 
-    def execute(self, graph_id: str, *, version: str = 'draft', inputs: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return self._client._request('POST', '/graphs/' + segment(graph_id) + '/execute',
-                                     params={'version': version}, json={'inputs': inputs or {}})
+    def execute(
+        self, graph_id: str, *, version: str = "draft", inputs: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """Submit an owned graph and return its initial execution state.
+
+        Requires graphs:run and consumes account quota. Select draft, published,
+        or an explicit version, and pass graph inputs as a dictionary. This
+        method does not wait for completion or retry failed submissions.
+        """
+        return self._client._request(
+            "POST",
+            "/graphs/" + segment(graph_id) + "/execute",
+            params={"version": version},
+            json={"inputs": inputs or {}},
+        )
 
 
 class Executions(Resource):
+    """Inspect, cancel, and poll account-owned executions."""
+
     def get(self, execution_id: str) -> Dict[str, Any]:
-        return self._client._request('GET', '/executions/' + segment(execution_id))
+        """Return an owned execution snapshot, including status and outputs."""
+        return self._client._request("GET", "/executions/" + segment(execution_id))
 
     def cancel(self, execution_id: str) -> Dict[str, Any]:
-        return self._client._request('POST', '/executions/' + segment(execution_id) + '/cancel')
+        """Request cancellation and return the execution snapshot."""
+        return self._client._request("POST", "/executions/" + segment(execution_id) + "/cancel")
 
-    def wait(self, execution_id: str, *, timeout: float = 120, poll_interval: float = 2) -> Dict[str, Any]:
-        if not math.isfinite(timeout) or timeout <= 0 or not math.isfinite(poll_interval) or poll_interval <= 0:
-            raise ValueError('timeout and poll_interval must be positive finite numbers.')
+    def wait(
+        self, execution_id: str, *, timeout: float = 120, poll_interval: float = 2
+    ) -> Dict[str, Any]:
+        """Poll until a terminal status or the polling deadline.
+
+        Args:
+            execution_id: Identifier of the execution to observe.
+            timeout: Positive deadline in seconds. Remaining time caps HTTP
+                timeouts, which apply per I/O phase, not to the entire request.
+            poll_interval: Positive delay in seconds between status requests.
+
+        Returns:
+            The terminal snapshot, including failed or canceled executions.
+
+        Raises:
+            ValueError: A timing argument is nonpositive or nonfinite.
+            ExecutionTimeout: Polling expired; the remote run is not canceled.
+            SubforkError: A status request failed; it is not retried.
+        """
+        if (
+            not math.isfinite(timeout)
+            or timeout <= 0
+            or not math.isfinite(poll_interval)
+            or poll_interval <= 0
+        ):
+            raise ValueError("timeout and poll_interval must be positive finite numbers.")
         deadline = time.monotonic() + timeout
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ExecutionTimeout(execution_id)
-            result = self._client._request('GET', '/executions/' + segment(execution_id),
-                                          timeout=min(self._client.timeout, remaining))
-            if result['status'] in {'completed', 'failed', 'canceled', 'cancelled', 'outcome_unknown'}:
+            result = self._client._request(
+                "GET",
+                "/executions/" + segment(execution_id),
+                timeout=min(self._client.timeout, remaining),
+            )
+            if result["status"] in {
+                "completed",
+                "failed",
+                "canceled",
+                "cancelled",
+                "outcome_unknown",
+            }:
                 return result
             time.sleep(min(poll_interval, max(0, deadline - time.monotonic())))

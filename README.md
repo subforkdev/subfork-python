@@ -116,3 +116,31 @@ phase, not a strict wall-clock deadline for the entire network exchange.
 The first scaffold is synchronous. Async support, rich response models, artifact
 streaming, idempotent write retries and worker support are not included. Mock HTTP
 tests do not certify any particular server deployment.
+
+## Code quality
+
+Install `.[dev]` to get the pinned development tools. Black 24.8.0, isort 5.13.2,
+and Flake8 7.1.1 follow the conventions used in the sibling envstack and pyseq
+projects: 100-column formatting, isort's Black profile, and a Python 3.8 target.
+The tool versions also support running locally under Python 3.8.
+
+```bash
+make format       # Sort imports and apply Black to src/ and tests/
+make lint         # Check formatting, imports, Flake8 and Google-style docstrings
+make typecheck    # Check annotated library code with mypy
+make test         # Run the HTTP contract tests
+make check        # Run lint, type checking and tests
+make build        # Build distributions and check their metadata
+```
+
+Activate your environment first, or specify it explicitly, for example:
+`make check PYTHON=.venv/bin/python`. The CI lint job uses the same commands.
+EditorConfig defines whitespace and newline conventions for supporting editors.
+
+Add annotations and docstrings to new functions, methods and classes, including
+constructors and test helpers. Public docstrings should explain side effects,
+permissions, return values and failure behavior where useful. JSON dictionaries
+retain `Any` values because node parameters and server response fields are dynamic;
+this release does not pretend to provide complete generated response models.
+Mypy checks library signatures and bodies; Flake8 and formatting cover both the
+library and tests. Runtime tests continue to cover Python 3.8 in CI.
