@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "subfork"
+version = "0.1.0a1"
+description = "Python API client for Subfork graph authoring and execution"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["httpx>=0.28,<1"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "build>=1,<2", "twine>=6,<7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+subfork = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
