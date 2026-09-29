@@ -6,19 +6,36 @@ BYO workers belong in the separate worker package, not this client.
 
 ## Development install
 
-Requires Python 3.10+.
+Requires Python 3.10+ and a modern pip (21.3+ for editable installs).
+Use a supported interpreter explicitly; the system `python3` may be older.
 
 ```bash
-python -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -e '.[dev]'
+python -m pip install --upgrade pip
+python -m pip install -e '.[dev]'
 pytest
 python -m build
 python -m twine check dist/*
 ```
 
-A package license must be selected before the first public release. CI builds and
-checks distributions but does not publish them.
+If pip reports that editable mode requires `setup.py`, check `python --version`
+and `python -m pip --version`. Python 3.8 is unsupported. Create a new environment
+with Python 3.10+ and upgrade pip there; upgrading pip alone cannot change its
+Python interpreter. A `setup.py` compatibility shim is not needed.
+
+With [uv](https://docs.astral.sh/uv/), a supported Python can also be provisioned
+without changing the system Python. Preserve an existing environment by using a
+new directory:
+
+```bash
+uv venv --python 3.12 .venv312
+source .venv312/bin/activate
+uv pip install -e '.[dev]'
+```
+
+Licensed under [BSD-3-Clause](LICENSE). CI builds and checks distributions but does
+not publish them.
 
 ## Usage
 
