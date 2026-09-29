@@ -41,7 +41,7 @@ Public documentation lives in `docs/`. Its `mkpages.yml` selects the dark theme.
 To generate the Jekyll source with Python 3.12:
 
 ```bash
-python -m pip install -r requirements-docs.txt
+python -m pip install -e '.[docs]'
 mkpages build docs --output .mkpages
 mkpages preview docs/
 ```
