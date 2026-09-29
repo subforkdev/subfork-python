@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "subfork"
-version = "0.1.0a1"
+version = "2.0.0"
 description = "Python API client for Subfork graph authoring and execution"
 readme = "README.md"
 license = {file = "LICENSE"}
