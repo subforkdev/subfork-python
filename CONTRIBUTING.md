@@ -35,6 +35,20 @@ this release does not pretend to provide complete generated response models.
 Mypy checks library signatures and bodies; Flake8 and formatting cover both the
 library and tests. Runtime tests continue to cover Python 3.8 in CI.
 
+## Versioning
+
+```bash
+make version                       # Show the current version
+make check-version                 # Verify both version fields agree
+make bump-patch                    # 2.0.0 -> 2.0.1
+make bump-minor                    # 2.0.0 -> 2.1.0
+make bump-major                    # 2.0.0 -> 3.0.0
+make bump-version VERSION=2.1.0     # Set an explicit stable version
+```
+
+Bumps update `pyproject.toml` and `subfork.__version__` together. They do not
+commit, tag, or publish. Review and commit the changes before releasing.
+
 ## Documentation site
 
 Public documentation lives in `docs/`. Its `mkpages.yml` selects the dark theme.
