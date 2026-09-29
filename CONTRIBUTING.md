@@ -34,3 +34,20 @@ retain `Any` values because node parameters and server response fields are dynam
 this release does not pretend to provide complete generated response models.
 Mypy checks library signatures and bodies; Flake8 and formatting cover both the
 library and tests. Runtime tests continue to cover Python 3.8 in CI.
+
+## Documentation site
+
+Public documentation lives in `docs/`. Its `mkpages.yml` selects the dark theme.
+To generate the Jekyll source with Python 3.12:
+
+```bash
+python -m pip install -r requirements-docs.txt
+mkpages build docs --output .mkpages
+mkpages preview docs/
+```
+
+The Pages workflow builds pull requests and deploys `master`. In repository
+**Settings → Pages**, select **GitHub Actions** as the source. The initial site
+URL is `https://subforkdev.github.io/subfork-python/`; the workflow supplies its
+`--url` and `--baseurl` options. Update those if a custom domain is configured.
+Preview serves the documentation at `http://127.0.0.1:4000/`.

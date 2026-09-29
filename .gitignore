@@ -49,3 +49,8 @@ Thumbs.db
 Desktop.ini
 .codex/
 .agents/
+
+# Generated documentation site
+.mkpages/
+_site/
+.jekyll-cache/

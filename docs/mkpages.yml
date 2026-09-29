@@ -1,0 +1,20 @@
+title: Subfork Python
+description: Create, publish, and run Subfork graphs from Python and the command line.
+theme: dark
+navigation:
+  - label: Home
+    href: /
+  - label: Install
+    href: /installation/
+  - label: Python
+    href: /usage/
+  - label: CLI
+    href: /cli/
+  - label: Examples
+    href: /examples/
+  - label: Troubleshooting
+    href: /troubleshooting/
+  - label: Example Catalog
+    href: https://examples.subfork.com
+  - label: GitHub
+    href: https://github.com/subforkdev/subfork-python
