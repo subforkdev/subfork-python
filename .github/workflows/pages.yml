@@ -29,8 +29,8 @@ jobs:
       - name: Generate Jekyll source
         run: >-
           mkpages build docs --output .mkpages
-          --url "https://subforkdev.github.io"
-          --baseurl "/subfork-python"
+          --url "https://python.subfork.com"
+          --baseurl ""
       - name: Build site
         uses: actions/jekyll-build-pages@v1
         with:

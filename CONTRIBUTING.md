@@ -59,9 +59,3 @@ python -m pip install -e '.[docs]'
 mkpages build docs --output .mkpages
 mkpages preview docs/
 ```
-
-The Pages workflow builds pull requests and deploys `master`. In repository
-**Settings → Pages**, select **GitHub Actions** as the source. The initial site
-URL is `https://subforkdev.github.io/subfork-python/`; the workflow supplies its
-`--url` and `--baseurl` options. Update those if a custom domain is configured.
-Preview serves the documentation at `http://127.0.0.1:4000/`.
