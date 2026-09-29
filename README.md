@@ -1,73 +1,52 @@
-# subfork
+<div class="gridline-home-hero">
+  <a href="https://subfork.com">
+    <img src="assets/subfork-banner.png" alt="Subfork" width="100%">
+  </a>
+  <p>Create, publish, and run graphs from Python.</p>
+</div>
 
-Python API client for Subfork graph authoring, publication and execution.
-**Alpha scaffold; not yet published to PyPI.** Distribution and import name: `subfork`.
-BYO workers belong in the separate worker package, not this client.
+# Subfork Python
 
-## Development install
+The Python client for [Subfork](https://subfork.com). Discover nodes, build reusable
+graphs, publish versions, and run them from your scripts, applications, or agents.
 
-Requires Python 3.8+ and a modern pip (21.3+ for editable installs).
-Use a supported interpreter explicitly; the system `python3` may be older.
+## Install
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e '.[dev]'
-pytest
-python -m build
-python -m twine check dist/*
-```
-
-If pip reports that editable mode requires `setup.py`, check `python --version`
-and `python -m pip --version`. Upgrade pip inside the active environment:
-`python -m pip install --upgrade pip`. Python 3.8 is supported; pip will select
-the latest pip and dependencies compatible with that interpreter. A `setup.py`
-compatibility shim is not needed.
-
-With [uv](https://docs.astral.sh/uv/), a supported Python can also be provisioned
-without changing the system Python. Preserve an existing environment by using a
-new directory:
+Requires Python 3.8+.
 
 ```bash
-uv venv --python 3.12 .venv312
-source .venv312/bin/activate
-uv pip install -e '.[dev]'
+pip install subfork
 ```
 
-Licensed under [BSD-3-Clause](LICENSE). CI builds and checks distributions but does
-not publish them.
+## Connect
 
-## Usage
-
-Create an API key under Account → API keys on a deployment with API-key support.
-Set `SUBFORK_API_KEY` in your process environment; never put it in source files,
-URLs, graph definitions, notebooks committed to git, or agent transcripts.
+Create a key under **Account → API keys** in Subfork and set `SUBFORK_API_KEY` in
+your environment. Grant the permissions your application needs: read, write, run,
+and/or publish. Keep the key out of source files and graph definitions.
 
 ```python
 from subfork import Subfork
 
-with Subfork() as client:  # Reads SUBFORK_API_KEY; defaults to https://subfork.com
-    nodes = client.nodes.list(include_all_versions=True)
+with Subfork() as client:
+    nodes = client.nodes.list()
     graphs = client.graphs.list()
 ```
 
-For a local deployment:
+The client reads `SUBFORK_API_KEY` and connects to `https://subfork.com` by default.
+Responses are dictionaries and lists matching the API's JSON responses.
+
+For another deployment, pass its origin without `/api/v1`:
 
 ```python
 with Subfork(base_url="http://subfork.localhost") as client:
     nodes = client.nodes.list()
 ```
 
-`base_url` is an origin, without `/api/v1`. HTTPS is required except for loopback
-and `.localhost` hosts. Credentials are sent in the Authorization bearer header.
-Redirects are not followed. Use a context manager or call `client.close()`.
+## Create and run a graph
 
-## Author, publish, execute
-
-The following deliberately creates and publishes a public graph and consumes
-execution quota. Grant read/write/run/publish scopes only when needed.
-Responses are dictionaries preserving the server's JSON shape.
+This example creates a text-producing graph, publishes `v1`, and runs that version.
+It requires read, write, publish, and run permissions. Graphs are public, and runs
+use your account's execution quota.
 
 ```python
 from subfork import Subfork
@@ -76,71 +55,63 @@ name = "Python greeting"
 definition = {
     "name": name,
     "nodes": [{
-        "node_instance_id": "hello", "node_id": "n_text_value",
-        "node_version": "1.0.0", "title": "Hello",
+        "node_instance_id": "hello",
+        "node_id": "n_text_value",
+        "node_version": "1.0.0",
+        "title": "Hello",
         "params": {"text": "Hello from Python"},
     }],
     "edges": [],
-    "graph_outputs": {"text": {"node_instance_id": "hello", "output_name": "text"}},
+    "graph_outputs": {
+        "text": {"node_instance_id": "hello", "output_name": "text"},
+    },
 }
+
 with Subfork() as client:
     client.graphs.validate(definition)
     graph = client.graphs.create(name=name, definition=definition)
     client.graphs.publish(graph["id"], version="v1")
+
     execution = client.graphs.execute(graph["id"], version="v1")
     result = client.executions.wait(execution["id"], timeout=120)
     print(result["status"], result.get("outputs"))
 ```
 
-Discover published blocks with `graphs.published()` and retrieve their exact
-interfaces with `graphs.published_version(graph_id, version)`. Compose their
-returned node IDs with `composite_graph` parameters and explicit pinned versions.
-`graphs.interface(graph_id)` previews the server-inferred interface.
-`graphs.update()` replaces the submitted draft fields, including description;
-pass the description to preserve it. Existing server ownership and quotas apply.
+To test a draft before publishing, call `graphs.execute(graph_id)` without a
+version. To update a draft, use `graphs.update()` with its name, definition, and
+description; omitting the description clears it.
 
-## Errors and limits
+## Reuse building blocks
 
-Catch `AuthenticationError`, `PermissionDeniedError`, `ValidationError`,
-`RateLimitError`, or the base `APIError`; HTTP errors expose `status_code` and
-`retry_after`. Messages intentionally do not echo raw response bodies or secrets.
-`TransportError` means the outcome of a write may be unknown. There are no automatic
-retries: inspect remote state before retrying create, publish or execute operations.
+Explore published graphs and inspect their versioned interfaces:
 
-`executions.wait()` polls until a terminal status and returns failed executions
-as results too. `ExecutionTimeout` does **not** cancel the remote execution;
-use `executions.cancel(id)` explicitly. Polling uses a monotonic deadline and caps
-individual HTTP timeout settings by remaining time. HTTPX timeouts apply per I/O
-phase, not a strict wall-clock deadline for the entire network exchange.
-
-The first scaffold is synchronous. Async support, rich response models, artifact
-streaming, idempotent write retries and worker support are not included. Mock HTTP
-tests do not certify any particular server deployment.
-
-## Code quality
-
-Install `.[dev]` to get the pinned development tools. Black 24.8.0, isort 5.13.2,
-and Flake8 7.1.1 follow the conventions used in the sibling envstack and pyseq
-projects: 100-column formatting, isort's Black profile, and a Python 3.8 target.
-The tool versions also support running locally under Python 3.8.
-
-```bash
-make format       # Sort imports and apply Black to src/ and tests/
-make lint         # Check formatting, imports, Flake8 and Google-style docstrings
-make typecheck    # Check annotated library code with mypy
-make test         # Run the HTTP contract tests
-make check        # Run lint, type checking and tests
-make build        # Build distributions and check their metadata
+```python
+with Subfork() as client:
+    blocks = client.graphs.published()
+    block = client.graphs.published_version(graph_id, "v1")
 ```
 
-Activate your environment first, or specify it explicitly, for example:
-`make check PYTHON=.venv/bin/python`. The CI lint job uses the same commands.
-EditorConfig defines whitespace and newline conventions for supporting editors.
+Replace `graph_id` with the ID of a graph you want to use. Published graph versions
+can be composed into larger graphs using the returned composite node manifest.
+Pin child versions so later publications do not change your graph's behavior.
 
-Add annotations and docstrings to new functions, methods and classes, including
-constructors and test helpers. Public docstrings should explain side effects,
-permissions, return values and failure behavior where useful. JSON dictionaries
-retain `Any` values because node parameters and server response fields are dynamic;
-this release does not pretend to provide complete generated response models.
-Mypy checks library signatures and bodies; Flake8 and formatting cover both the
-library and tests. Runtime tests continue to cover Python 3.8 in CI.
+## Handle failures
+
+HTTP failures raise `APIError` subclasses, including `AuthenticationError`,
+`PermissionDeniedError`, `ValidationError`, and `RateLimitError`. These expose
+`status_code` and an optional `retry_after` header.
+
+`executions.wait()` returns failed and canceled runs as well as successful ones,
+so check the returned status. An `ExecutionTimeout` stops polling but does not
+cancel the remote run; use `executions.cancel(execution_id)` to request cancellation.
+
+The client does not automatically retry requests. After a `TransportError`, check
+remote state before repeating a create, publish, or execute request.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and code-quality checks.
+
+## License
+
+[BSD-3-Clause](LICENSE).
