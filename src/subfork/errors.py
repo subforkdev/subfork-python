@@ -1,4 +1,5 @@
 """Public client errors; credentials and raw responses are never attached."""
+from typing import Optional
 
 
 class SubforkError(Exception):
@@ -10,7 +11,7 @@ class TransportError(SubforkError):
 
 
 class APIError(SubforkError):
-    def __init__(self, message: str, *, status_code: int, retry_after: str | None = None):
+    def __init__(self, message: str, *, status_code: int, retry_after: Optional[str] = None):
         super().__init__(message)
         self.status_code = status_code
         self.retry_after = retry_after

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -12,8 +12,8 @@ from .resources import Executions, Graphs, Nodes
 
 
 class Subfork:
-    def __init__(self, api_key: str | None = None, *, base_url: str = 'https://subfork.com',
-                 timeout: float = 30, transport: httpx.BaseTransport | None = None):
+    def __init__(self, api_key: Optional[str] = None, *, base_url: str = 'https://subfork.com',
+                 timeout: float = 30, transport: Optional[httpx.BaseTransport] = None):
         key = os.environ.get('SUBFORK_API_KEY') if api_key is None else api_key
         if not key or any(char.isspace() for char in key):
             raise ValueError('Provide an API key or set SUBFORK_API_KEY; keys cannot contain whitespace.')

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,9 +7,8 @@ name = "subfork"
 version = "0.1.0a1"
 description = "Python API client for Subfork graph authoring and execution"
 readme = "README.md"
-license = "BSD-3-Clause"
-license-files = ["LICENSE"]
-requires-python = ">=3.10"
+license = {file = "LICENSE"}
+requires-python = ">=3.8"
 dependencies = ["httpx>=0.28,<1"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -20,6 +19,9 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "build>=1,<2", "twine>=6,<7"]
+
+[tool.setuptools]
+license-files = ["LICENSE"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
