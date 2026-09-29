@@ -17,6 +17,9 @@ classifiers = [
   "Typing :: Typed",
 ]
 
+[project.urls]
+Documentation = "https://python.subfork.com"
+
 [project.scripts]
 subfork = "subfork.cli:main"
 
