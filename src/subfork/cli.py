@@ -183,7 +183,11 @@ def build_parser() -> argparse.ArgumentParser:
             child.add_argument("--comment", default="")
         elif command == "execute":
             child.add_argument("--version", default="draft")
-            child.add_argument("-o", "--out", help="Write result JSON to a file instead of stdout")
+            child.add_argument(
+                "-o",
+                "--out",
+                help="Write result JSON to a file, or - for stdout (default: no results)",
+            )
             child.add_argument(
                 "--no-wait", action="store_true", help="Return submission status immediately"
             )
@@ -314,7 +318,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if result_file is not None
             else (export_file if export_file != "-" else None)
         )
-        if destination is not None and Path(destination).exists() and not force:
+        if (
+            destination is not None
+            and destination != "-"
+            and Path(destination).exists()
+            and not force
+        ):
             raise ValueError("Output file already exists; use --force to overwrite.")
         with Subfork(base_url=args.base_url, timeout=args.timeout) as client:
             result = graph_command(client, args)
@@ -333,16 +342,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 }
             else:
                 display = result.get("outputs", {})
-        rendered = json.dumps(display, indent=2, ensure_ascii=False) + "\n"
-        output = getattr(args, "output", "-")
-        if result_file is None and output == "-":
-            sys.stdout.write(rendered)
-        else:
-            # Open only after the request and serialization succeed.
-            with Path(result_file if result_file is not None else output).open(
-                "w" if force else "x", encoding="utf-8", newline="\n"
-            ) as stream:
-                stream.write(rendered)
+        emit_results = args.command != "execute" or result_file is not None or args.raw
+        if emit_results:
+            rendered = json.dumps(display, indent=2, ensure_ascii=False) + "\n"
+            output = result_file if result_file is not None else getattr(args, "output", "-")
+            if output == "-":
+                sys.stdout.write(rendered)
+            else:
+                # Open only after the request and serialization succeed.
+                with Path(output).open(
+                    "w" if force else "x", encoding="utf-8", newline="\n"
+                ) as stream:
+                    stream.write(rendered)
+        elif args.command == "execute" and args.no_wait:
+            print(
+                "Execution {}: {}".format(
+                    result.get("id") or result.get("execution_id"), result.get("status")
+                ),
+                file=sys.stderr,
+            )
         if failed:
             print(
                 "subfork: execution did not complete successfully; use --raw for details",

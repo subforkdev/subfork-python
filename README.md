@@ -47,8 +47,8 @@ subfork execute GRAPH_ID --version v1
 subfork execute GRAPH_ID -o results.json
 ```
 
-`execute` waits for completion and returns JSON. Use `-o` to save results to a
-file; progress stays on stderr. Add `-f` / `--force` to overwrite existing output
+`execute` waits for completion and shows progress on stderr. Results are opt-in:
+use `-o results.json` to save JSON or `-o -` to print it to stdout. Add `-f` / `--force` to overwrite existing output
 files with `execute` or `export`. Run `subfork --help` or `subfork execute --help`
 for more options.
 
