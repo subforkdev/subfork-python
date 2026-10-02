@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import math
+import mimetypes
+import os
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 from urllib.parse import quote
 
 from .errors import ExecutionTimeout
@@ -226,3 +229,67 @@ class Executions(Resource):
             }:
                 return result
             time.sleep(min(poll_interval, max(0, deadline - time.monotonic())))
+
+
+class Artifacts(Resource):
+    """Download artifacts accessible to the API-key account."""
+
+    def download(
+        self,
+        artifact_id: str,
+        destination: Union[str, os.PathLike],
+        *,
+        overwrite: bool = False,
+        max_bytes: int = 250_000_000,
+    ) -> Path:
+        """Stream bytes to a file and return its path after successful completion.
+
+        The parent directory must exist. Failed downloads leave no partial output
+        and preserve an existing destination. Set overwrite explicitly to replace
+        it. At most one HTTPS storage redirect is followed, without API credentials.
+        The default decoded-byte limit is 250 MB; increase it for larger media.
+        Requires graphs:read and access to the unexpired artifact.
+        """
+        return self._client._download(
+            "/artifacts/" + segment(artifact_id),
+            Path(destination),
+            overwrite=overwrite,
+            max_bytes=max_bytes,
+        )
+
+
+class Assets(Resource):
+    """Manage input files belonging to an owned graph."""
+
+    def list(self, graph_id: str, *, include_generated: bool = False) -> Dict[str, Any]:
+        """Return the server's assets envelope; generated outputs are opt-in."""
+        return self._client._request(
+            "GET",
+            "/graphs/" + segment(graph_id) + "/assets",
+            params={"include_generated": include_generated},
+        )
+
+    def upload(
+        self,
+        graph_id: str,
+        source: Union[str, os.PathLike],
+        *,
+        content_type: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Upload a local file and return artifact metadata, including artifact_id.
+
+        Requires graphs:write on a server supporting API-key asset uploads.
+        Upload quotas, file validation and the uploads feature switch still apply.
+        This stores an asset; it does not select it on a node or execute the graph.
+        The file is streamed from disk and the operation is never retried.
+        """
+        path = Path(source)
+        media_type = (
+            content_type or mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        )
+        with path.open("rb") as stream:
+            return self._client._request(
+                "POST",
+                "/graphs/" + segment(graph_id) + "/assets/files",
+                files={"upload": (path.name, stream, media_type)},
+            )

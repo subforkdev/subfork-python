@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 import os
 import re
+import tempfile
+from pathlib import Path
 from types import TracebackType
 from typing import Any, Optional, Type
 
@@ -20,7 +22,7 @@ from .errors import (
     TransportError,
     ValidationError,
 )
-from .resources import Executions, Graphs, Nodes
+from .resources import Artifacts, Assets, Executions, Graphs, Nodes
 
 
 def _error_message(response: httpx.Response) -> str:
@@ -30,7 +32,7 @@ def _error_message(response: httpx.Response) -> str:
         return message
     try:
         payload = response.json()
-    except ValueError:
+    except (ValueError, httpx.ResponseNotRead):
         return message
     detail = payload.get("detail") if isinstance(payload, dict) else None
     if isinstance(detail, str) and re.fullmatch(
@@ -107,6 +109,8 @@ class Subfork:
             follow_redirects=False,
             transport=transport,
         )
+        self.artifacts = Artifacts(self)
+        self.assets = Assets(self)
         self.nodes = Nodes(self)
         self.graphs = Graphs(self)
         self.executions = Executions(self)
@@ -124,6 +128,17 @@ class Subfork:
             raise TransportError(
                 "API request could not be completed; inspect remote state before retrying a write."
             ) from None
+        self._check_response(response)
+        if response.status_code == 204:
+            return None
+        try:
+            return response.json()
+        except ValueError:
+            raise InvalidResponseError("API returned invalid JSON.") from None
+
+    @staticmethod
+    def _check_response(response: httpx.Response) -> None:
+        """Raise a credential-safe API exception for an unsuccessful response."""
         if not response.is_success:
             errors = {
                 401: AuthenticationError,
@@ -138,12 +153,61 @@ class Subfork:
                 status_code=response.status_code,
                 retry_after=response.headers.get("retry-after"),
             )
-        if response.status_code == 204:
-            return None
+
+    def _download(self, path: str, destination: Path, *, overwrite: bool, max_bytes: int) -> Path:
+        """Stream an artifact, stripping credentials on a storage redirect."""
+        if max_bytes <= 0:
+            raise ValueError("max_bytes must be positive.")
+        if destination.exists() and not overwrite:
+            raise FileExistsError("Output file already exists; set overwrite=True.")
+        temporary = None
+        response = None
         try:
-            return response.json()
-        except ValueError:
-            raise InvalidResponseError("API returned invalid JSON.") from None
+            request = self._client.build_request("GET", path.lstrip("/"))
+            response = self._client.send(request, stream=True)
+            if response.status_code in {301, 302, 303, 307, 308}:
+                location = response.headers.get("location")
+                if not location:
+                    raise InvalidResponseError("Artifact redirect has no location.")
+                try:
+                    target = response.url.join(location)
+                except httpx.InvalidURL:
+                    raise InvalidResponseError(
+                        "Artifact redirect contains an invalid URL."
+                    ) from None
+                if target.scheme != "https" or target.userinfo or target.fragment:
+                    raise InvalidResponseError(
+                        "Artifact redirect must use HTTPS without credentials."
+                    )
+                response.close()
+                # A fresh Request does not inherit the API client's headers or cookies.
+                response = self._client.send(
+                    httpx.Request("GET", target), stream=True, auth=None, follow_redirects=False
+                )
+            self._check_response(response)
+            with tempfile.NamedTemporaryFile(
+                dir=destination.parent, prefix=".subfork-", delete=False
+            ) as stream:
+                temporary = Path(stream.name)
+                size = 0
+                for chunk in response.iter_bytes(chunk_size=65536):
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValueError("Artifact exceeds max_bytes; partial download discarded.")
+                    stream.write(chunk)
+            if overwrite:
+                os.replace(temporary, destination)
+            else:
+                # Exclusive publication also protects against another writer racing us.
+                os.link(temporary, destination)
+            return destination
+        except httpx.TransportError:
+            raise TransportError("Artifact download could not be completed.") from None
+        finally:
+            if response is not None:
+                response.close()
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def close(self) -> None:
         """Release the HTTP connection pool."""
