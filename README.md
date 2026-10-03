@@ -47,8 +47,8 @@ subfork execute GRAPH_ID --version v1
 subfork execute GRAPH_ID -o results.json
 ```
 
-`execute` waits for completion and returns JSON. Use `-o` to save results to a
-file; progress stays on stderr. Add `-f` / `--force` to overwrite existing output
+`execute` waits for completion and shows progress on stderr. Results are opt-in:
+use `-o results.json` to save JSON or `-o -` to print it to stdout. Add `-f` / `--force` to overwrite existing output
 files with `execute` or `export`. Run `subfork --help` or `subfork execute --help`
 for more options.
 
@@ -120,7 +120,8 @@ remote state before repeating a create, publish, or execute request.
 
 ## Documentation
 
-See the [documentation](docs/index.md) for installation, Python usage, CLI options,
+See the [API and file workflow guide](docs/api.md) for asset uploads and artifact
+downloads, and the [documentation](docs/index.md) for installation, Python usage, CLI options,
 and examples. Browse [Subfork Examples](https://examples.subfork.com) and the
 [subfork-examples repository](https://github.com/subforkdev/subfork-examples) for
 graphs to learn from and reuse.

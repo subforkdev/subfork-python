@@ -87,3 +87,6 @@ requests. After a `TransportError`, check remote state before submitting another
 create, publish, or execute request.
 
 See [troubleshooting](troubleshooting.md) for common errors.
+
+See the [API and file workflow guide](api.md) for asset uploads, artifact downloads,
+and using execution results in your own functions.

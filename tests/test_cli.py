@@ -126,7 +126,7 @@ def test_removed_groups(command: str) -> None:
     assert result.value.code == 2
 
 
-@pytest.mark.parametrize("mode", ["default", "raw", "no-wait", "failed", "timeout"])
+@pytest.mark.parametrize("mode", ["default", "stdout", "raw", "no-wait", "failed", "timeout"])
 def test_execution_output_modes(monkeypatch: pytest.MonkeyPatch, capsys: Any, mode: str) -> None:
     """Wait for results by default and preserve explicit diagnostic output modes."""
     seen = []
@@ -164,6 +164,8 @@ def test_execution_output_modes(monkeypatch: pytest.MonkeyPatch, capsys: Any, mo
     arguments = ["execute", "g_test"]
     if mode in {"raw", "no-wait"}:
         arguments.append("--" + mode)
+    if mode == "stdout":
+        arguments.extend(["-o", "-"])
     assert cli.main(arguments) == (1 if mode in {"failed", "timeout"} else 0)
     captured = capsys.readouterr()
     assert sum(request.method == "POST" for request in seen) == 1
@@ -171,16 +173,15 @@ def test_execution_output_modes(monkeypatch: pytest.MonkeyPatch, capsys: Any, mo
         assert captured.out == ""
         assert "e_test" in captured.err and "not canceled" in captured.err
         return
-    output = json.loads(captured.out)
-    if mode == "raw":
-        assert output == completed
-    elif mode == "default":
-        assert output == completed["outputs"]
+    if mode in {"default", "no-wait", "failed"}:
+        assert captured.out == ""
+        if mode == "no-wait":
+            assert "e_test" in captured.err and "running" in captured.err
+        if mode == "failed":
+            assert "did not complete successfully" in captured.err
     else:
-        assert output == {
-            "execution_id": "e_test",
-            "status": "failed" if mode == "failed" else "running",
-        }
+        output = json.loads(captured.out)
+        assert output == (completed if mode == "raw" else completed["outputs"])
     assert len(seen) == (1 if mode == "no-wait" else 2)
 
 

@@ -38,21 +38,21 @@ subfork execute GRAPH_ID -o results.json
 subfork execute GRAPH_ID -o results.json --force
 ```
 
-Execution waits for completion and prints JSON outputs. `-o` / `--out` writes
-results to a file instead of stdout. Use `-f` / `--force` to overwrite an existing
+Execution waits for completion without printing results. `-o` / `--out` writes
+result JSON to a file; use `-o -` to print it to stdout. Use `-f` / `--force` to overwrite an existing
 file; this flag also works with `export`.
 
 A yellow spinner shows active nodes. Finished nodes remain on stderr with their
-final status. JSON results stay on stdout, so piping works normally:
+final status. Opt in to JSON output for piping:
 
 ```bash
-subfork execute GRAPH_ID > results.json
+subfork execute GRAPH_ID -o - > results.json
 ```
 
 | Option | Behavior |
 | --- | --- |
-| `--no-wait` | Return the submission ID and status immediately |
-| `--raw` | Return the full execution snapshot |
+| `--no-wait` | Report submission ID and status on stderr immediately; use `-o` for JSON |
+| `--raw` | Print the full execution snapshot, or write it to the `-o` destination |
 | `--wait-timeout 300` | Wait up to 300 seconds; the default is 120 |
 | `--poll-interval 1` | Poll every second; the default is 2 |
 
