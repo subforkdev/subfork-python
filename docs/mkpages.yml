@@ -8,6 +8,8 @@ navigation:
     href: /installation/
   - label: Python
     href: /usage/
+  - label: API
+    href: /api/
   - label: CLI
     href: /cli/
   - label: Examples
