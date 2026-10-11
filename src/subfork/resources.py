@@ -95,6 +95,33 @@ class Graphs(Resource):
             },
         )
 
+    def upload_media(
+        self,
+        graph_id: str,
+        purpose: str,
+        file_path: Union[str, Path],
+        *,
+        replace_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Upload a thumbnail, preview, or screenshot to an owned graph.
+
+        Requires uploads. Graph media is stored by the server and counts toward
+        graph media quotas. The request is not automatically retried.
+        """
+        if purpose not in {"thumbnail", "preview", "screenshot"}:
+            raise ValueError("purpose must be thumbnail, preview, or screenshot.")
+        if replace_id is not None and (purpose != "screenshot" or not replace_id):
+            raise ValueError("replace_id is supported only for screenshots.")
+        path = Path(file_path)
+        media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        with path.open("rb") as stream:
+            return self._client._request(
+                "POST",
+                "/graphs/" + segment(graph_id) + "/media/" + purpose,
+                params={"replace_id": replace_id} if replace_id else None,
+                files={"upload": (path.name, stream, media_type)},
+            )
+
     def update(
         self, graph_id: str, *, name: str, definition: Dict[str, Any], description: str = ""
     ) -> Dict[str, Any]:

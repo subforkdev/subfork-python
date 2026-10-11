@@ -1,6 +1,7 @@
 """Exercise client contracts without network access or real credentials."""
 
 import json
+from pathlib import Path
 from typing import Any, Type
 
 import httpx
@@ -139,6 +140,37 @@ def test_authoring_requests_match_server_contract() -> None:
     assert seen[0][3] == {"name": "Demo", "definition": definition}
     assert seen[-2][3]["interface"] == {"inputs": {}, "outputs": {}}
     assert seen[-1][2:] == ({"version": "v1"}, {"inputs": {"value": 3}})
+
+
+def test_graph_media_upload_uses_multipart(tmp_path: Path) -> None:
+    """Upload graph media as a typed multipart file without retrying."""
+    image = tmp_path / "thumbnail.jpg"
+    image.write_bytes(b"jpeg-bytes")
+    seen = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(201, json={"artifact_id": "art_thumb"})
+
+    with Subfork(KEY, transport=httpx.MockTransport(handle)) as client:
+        result = client.graphs.upload_media("g_test", "thumbnail", image)
+        replacement = client.graphs.upload_media(
+            "g_test", "screenshot", image, replace_id="art_old"
+        )
+        with pytest.raises(ValueError, match="purpose"):
+            client.graphs.upload_media("g_test", "unknown", image)
+
+    assert result == replacement == {"artifact_id": "art_thumb"}
+    assert len(seen) == 2
+    assert seen[0].method == "POST"
+    assert seen[0].url.path == "/api/v1/graphs/g_test/media/thumbnail"
+    assert str(seen[0].url.params) == ""
+    assert seen[1].url.path == "/api/v1/graphs/g_test/media/screenshot"
+    assert str(seen[1].url.params) == "replace_id=art_old"
+    assert seen[0].headers["content-type"].startswith("multipart/form-data;")
+    assert b'filename="thumbnail.jpg"' in seen[0].content
+    assert b"image/jpeg" in seen[0].content
+    assert b"jpeg-bytes" in seen[0].content
 
 
 def test_transport_failure_is_not_retried() -> None:
